@@ -12,21 +12,25 @@ library(colorRamps)
 library(readr)
 library(Metrics)
 
+####################################################
+### load Hadley SST data (1*1 deg, 1870-2019)    ###
+### https://www.metoffice.gov.uk/hadobs/hadisst/ ###
+####################################################
+
 # df = stack(paste0("/Users/", Sys.info()[7], "/Desktop/HadISST_sst.nc"), varname = "sst")
 load("~/CC_LME_SST/Hadley_SST.RData")
 
-e = extent(-140, -100, 22.50, 47.50) #California Current LME lat-lon range
-
+e = extent(-140, -100, 22.50, 47.50) #California Current LME lat-lon range, just to reduce Hadley_SST data size
 cc = crop(df, e); rm(e)
 
-# change to data.frame
+# convert to data.frame
 df <- cc %>% rasterToPoints() %>% data.frame()
 
 # 1955-2012 climatology
 cc_1955_2012 <- cc[[1021:1716]] #january 1955 - december 2012
 plot(mean(cc_1955_2012), col = matlab.like(100), axes = F); maps::map(add = T, fill = T, col = "gray"); box(); degAxis(1); degAxis(2, las = 1)
 
-# trim Hadley SST to 1955-2018
+# trim Hadley SST if necessary
 cc_1870_2019 <- cc[[1:1798]] #Jan 1870 - Oct 2019
 plot(mean(cc_1870_2019), col = matlab.like(100), axes = F); maps::map(add = T, fill = T, col = "gray"); box(); degAxis(1); degAxis(2, las = 1)
 
@@ -36,14 +40,14 @@ plot(mean(cc_anomaly), col = matlab.like(100), axes = F); maps::map(add = T, fil
 names(cc_anomaly) = names(cc_1870_2019)
 plot(cc_anomaly, col = matlab.like(100), axes = F)
 
-# change to data.frame
+# convert anomaly to data.frame
 df <- cc_anomaly %>% rasterToPoints() %>% data.frame()
 
-#add lme
+#add LME GIS data
 names(df)
 latlon = df[,c(2,1)]
 coordinates(latlon)=~x+y
-lme<-rgdal::readOGR("/Users/ktanaka/Google Drive/Research/GIS/LME66/LMEs66.shp")
+lme<-rgdal::readOGR("~/CC_LME_SST/LME66/LMEs66.shp")
 CRS.new<-CRS("+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=37.5 +lon_0=-96 +x_0=0 +y_0=0+datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0")  #EPSG:102003
 proj4string(latlon) <- CRS.new 
 proj4string(lme) <- CRS.new
@@ -53,7 +57,7 @@ df = cbind(df, area)
 df = df[which(df$LME_NUMBER == 3),]
 rm(area, latlon, lme, CRS.new)
 
-#aggregate SST mean by year, skip last 9 rows
+#aggregate SST mean by year, skip last 9 columns
 sst_bin = df[,c(3:(length(df)-9))]
 group = names(sst_bin)
 year = substr(group, 2,5)
@@ -64,15 +68,14 @@ sst_bin = as.data.frame(t(sst_bin))
 sst_bin = cbind(group, sst_bin)
 sst_bin$Mean = rowMeans(sst_bin[,3:dim(sst_bin)[2]], na.rm = T)
 sst_bin = sst_bin[c("Year", "Month", "Mean")]
-# sst_bin = sst_bin[which(sst_bin$Year %in% c(1986:2017)),]
 rm(group, month, year)
 
-# calcuate trend
+# calcuate anomaly trend
 d = summarySE(sst_bin, measurevar = "Mean", groupvars = c("Year"))
 d$Year = as.numeric(as.character(d$Year))
 summary(lm(Mean~Year, data = d))
 
-# plot trend
+# plot
 ggplot(d, aes(x=Year, y=Mean, col = Mean)) +
   geom_errorbar(aes(ymin = Mean-ci, ymax = Mean+ci), width = 0.5) +
   geom_line() +
@@ -87,12 +90,13 @@ ggplot(d, aes(x=Year, y=Mean, col = Mean)) +
 
 rm(d)
 
-###################################################
-### use NWA climatology and add CM2.1 anomalies ###
-###################################################
+
+###############################################################################
+### downscale coarse Hadley data to 0.1 * 0.1 via NOAA regional climatology ###
+###############################################################################
 
 #read Calicornia Current climatology 1955-2012
-setwd("~/Desktop/")
+setwd("~/CC_LME_SST/Climatology/")
 # clim = read_csv("nep_all_t00an10.csv", skip = 1) #1955-2012 0.1 * 0.1
 # clim = read_csv("nep_5564_t00an10.csv", skip = 1) #1955-1964, 0.1 dec deg
 # clim = read_csv("nep_6574_t00an10.csv", skip = 1) #1965-1974, 0.1 dec deg
@@ -101,7 +105,6 @@ clim = read_csv("nep_8594_t00an10.csv", skip = 1) #1985-1994, 0.1 dec deg
 # clim = read_csv("nep_95A4_t00an10.csv", skip = 1) #1995-2004, 0.1 dec deg
 # clim = read_csv("nep_A5B2_t00an10.csv", skip = 1) #2005-2012, 0.1 dec deg
 
-
 clim = clim[,1:3]
 colnames(clim) = c("lat", "lon", "sst")
 
@@ -109,7 +112,7 @@ colnames(clim) = c("lat", "lon", "sst")
 names(clim)
 latlon = clim[,c(2,1)]
 coordinates(latlon)=~lon+lat
-lme<-rgdal::readOGR("/Users/ktanaka/Google Drive/Research/GIS/LME66/LMEs66.shp")
+lme<-rgdal::readOGR("~/CC_LME_SST/LME66/LMEs66.shp")
 CRS.new<-CRS("+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=37.5 +lon_0=-96 +x_0=0 +y_0=0+datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0")  #EPSG:102003
 proj4string(latlon) <- CRS.new 
 proj4string(lme) <- CRS.new
@@ -151,30 +154,25 @@ ggplot(d) +
   geom_sf(data = world, fill = "gray", size = .1, color = "black") +
   scale_fill_gradientn(colours = matlab.like(100), "mean SST 1870-2019") +
   coord_sf(xlim = range(cc$lon), ylim = range(cc$lat)) +
-  scale_x_continuous(expand = c(-0, 0)) +
-  scale_y_continuous(expand = c(-0, 0)) +
   theme_pubr() +
   theme(axis.title.x = element_blank(),
         axis.title.y = element_blank(), 
         legend.position = "right")
 
-###############################
-### copmare with Hadley_SST ###
-###############################
-hadley = stack(paste0("/Users/", Sys.info()[7], "/Desktop/HadISST_sst.nc"), varname = "sst")
 
-e = extent(-131.5, -109.5, 22.50, 47.50) #CC
+#######################################
+### copmare with originl Hadley_SST ###
+#######################################
 
-hadley = crop(hadley, e); rm(e)
-
-# change to data.frame
+# clip Hadley SST to CC LME
+load("~/CC_LME_SST/Hadley_SST.RData")
+e = extent(-131.5, -109.5, 22.50, 47.50) #CC lat-lon extent
+hadley = crop(df, e); rm(e)
 df <- hadley %>% rasterToPoints() %>% data.frame()
-
-#add lme
 names(df)
-latlon = df[,c(1,2)]; plot(latlon)
+latlon = df[,c(1,2)]
 coordinates(latlon)=~x+y
-lme<-rgdal::readOGR("/Users/ktanaka/Google Drive/Research/GIS/LME66/LMEs66.shp")
+lme<-rgdal::readOGR("~/CC_LME_SST/LME66/LMEs66.shp")
 CRS.new<-CRS("+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=37.5 +lon_0=-96 +x_0=0 +y_0=0+datum=NAD83 +units=m +no_defs +ellps=GRS80 +towgs84=0,0,0")  #EPSG:102003
 proj4string(latlon) <- CRS.new 
 proj4string(lme) <- CRS.new
@@ -183,9 +181,8 @@ colnames(area)[1] = "lme"
 df = cbind(df, area)
 df = df[which(df$LME_NUMBER == 3),]
 rm(area, latlon, lme, CRS.new)
-plot(df$x, df$y)
 
-#aggregate SST mean by year, skip last 9 rows
+#aggregate SST mean by year, skip last 9 columns
 sst_bin = df[,c(3:(length(df)-9))]
 group = names(sst_bin)
 year = substr(group, 2,5)
@@ -196,7 +193,6 @@ sst_bin = as.data.frame(t(sst_bin))
 sst_bin = cbind(group, sst_bin)
 sst_bin$Mean = rowMeans(sst_bin[,3:dim(sst_bin)[2]], na.rm = T)
 sst_bin = sst_bin[c("Year", "Month", "Mean")]
-# sst_bin = sst_bin[which(sst_bin$Year %in% c(1982:2017)),]
 rm(group, month, year)
 
 # calcuate trend
@@ -206,7 +202,7 @@ summary(lm(Mean~Year, data = d))
 
 hadley = d
 
-# hadley sst trend 1955-2018
+# downscaled hadley sst
 cc = cc[,c(5:dim(cc)[2])]
 group = names(cc)
 group = stringr::str_split_fixed(group, "-", 2)
@@ -227,4 +223,6 @@ plot(hadley$Year, hadley$Mean,
 box(bty = "l"); axis(1); axis(2, las = 2)
 points(cc$Year, cc$mean, type = 'o', 
        col = 'red', pch = 20, lwd = 2,  bty = "l")
+
+
 
